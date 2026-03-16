@@ -7,7 +7,7 @@ pub trait Diagnostic {
 }
 
 #[derive(Debug, Clone)]
-pub enum Errorcode {
+pub enum ErrorCode {
     // Manifest
     InvalidVersion(String),
     InvalidPackageName(String),
@@ -26,9 +26,17 @@ pub enum Errorcode {
     ManifestNotFound(PathBuf),
     ManifestReadError(String),
     ManifestParseError(String),
+
+    // Git sources
+    GitMissingRev(String),            // ningún branch/tag/commit especificado
+    GitConflictingRevs(String),       // más de uno especificado simultáneamente
+    GitEmptyUrl(String),              // repo = ""
+    GitInvalidUrl(String, String),    // esquema no reconocido
+    GitInvalidCommit(String, String), // hash no es 40 hex chars
+    GitInvalidFetchDepth(String),     // fetch_depth = 0
 }
 
-impl Diagnostic for Errorcode {
+impl Diagnostic for ErrorCode {
     fn code(&self) -> &'static str {
         match self {
             // cuando llegue i18n, este match no cambia
@@ -45,6 +53,13 @@ impl Diagnostic for Errorcode {
             Self::ManifestNotFound(_) => "E011",
             Self::ManifestReadError(_) => "E012",
             Self::ManifestParseError(_) => "E013",
+            // Git sources
+            Self::GitMissingRev(_) => "E014",
+            Self::GitConflictingRevs(_) => "E015",
+            Self::GitEmptyUrl(_) => "E016",
+            Self::GitInvalidUrl(..) => "E017",
+            Self::GitInvalidCommit(..) => "E018",
+            Self::GitInvalidFetchDepth(_) => "E019",
         }
     }
 
@@ -70,6 +85,28 @@ impl Diagnostic for Errorcode {
             Self::ManifestNotFound(p) => format!("no veld.toml found at '{}'", p.display()),
             Self::ManifestReadError(e) => format!("could not read veld.toml: {}", e),
             Self::ManifestParseError(e) => format!("could not parse veld.toml: {}", e),
+            Self::GitMissingRev(pkg) => format!(
+                "git dependency '{}' must specify 'branch', 'tag', or 'commit'",
+                pkg
+            ),
+
+            Self::GitConflictingRevs(pkg) => format!(
+                "git dependency '{}' specifies more than one of branch/tag/commit",
+                pkg
+            ),
+
+            Self::GitEmptyUrl(pkg) => format!("git dependency '{}' has an empty 'git' URL", pkg),
+
+            Self::GitInvalidUrl(pkg, url) => {
+                format!("'{}' is not a valid git URL for dependency '{}'", url, pkg)
+            }
+
+            Self::GitInvalidCommit(pkg, hash) => format!(
+                "'{}' is not a valid commit hash for dependency '{}' — expected 40 hex characters",
+                hash, pkg
+            ),
+
+            Self::GitInvalidFetchDepth(pkg) => format!("'fetch_depth' for '{}' must be >= 1", pkg),
         }
     }
 
@@ -93,6 +130,18 @@ impl Diagnostic for Errorcode {
                 Some("example: aarch64-linux-gnu, x86_64-linux-musl".into())
             }
             Self::ManifestNotFound(_) => Some("run 'veld init' to create a new project".into()),
+            Self::GitMissingRev(_) => {
+                Some("example: { git = \"https://github.com/org/lib\", tag = \"v1.0.0\" }".into())
+            }
+            Self::GitConflictingRevs(_) => {
+                Some("use exactly one of: branch, tag, or commit".into())
+            }
+            Self::GitInvalidUrl(..) => {
+                Some("supported schemes: https://, http://, ssh://, git@".into())
+            }
+            Self::GitInvalidCommit(..) => {
+                Some("use the full 40-character SHA-1 hash (e.g. a1b2c3d4...ef)".into())
+            }
             _ => None,
         }
     }
