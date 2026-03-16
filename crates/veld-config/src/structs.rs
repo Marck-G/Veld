@@ -2,7 +2,7 @@ use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Manifest {
     pub package: PackageMetadata,
     pub profiles: BTreeMap<String, ProfileConfig>,
@@ -12,7 +12,7 @@ pub struct Manifest {
     pub dev_dependencies: BTreeMap<String, DependencySpec>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PackageMetadata {
     pub name: String,
     pub version: semver::Version,
@@ -21,7 +21,7 @@ pub struct PackageMetadata {
     pub description: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProfileConfig {
     pub cxx_std: CxxStandard,
     pub build: BuildType,

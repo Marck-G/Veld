@@ -1,3 +1,7 @@
 mod structs;
-mod validations;
 mod tools;
+mod validations;
+
+#[cfg(test)]
+mod test;
+pub mod constants;
