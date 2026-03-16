@@ -20,7 +20,7 @@ pub enum ErrorCode {
 
     // Profile
     ProfileNotFound(String),
-    InvalidTargetTriple(String),
+    InvalidTargetTriple(String, String),
 
     // IO
     ManifestNotFound(PathBuf),
@@ -34,6 +34,10 @@ pub enum ErrorCode {
     GitInvalidUrl(String, String),    // esquema no reconocido
     GitInvalidCommit(String, String), // hash no es 40 hex chars
     GitInvalidFetchDepth(String),     // fetch_depth = 0
+    FileError(String, String),        // Error file errors
+    SanitizersInRelease(String),      // profile_name
+    LtoWithSanitizers(String),        // profile_name
+    ConflictingSanitizers(String),    // profile_name
 }
 
 impl Diagnostic for ErrorCode {
@@ -49,7 +53,7 @@ impl Diagnostic for ErrorCode {
             Self::InvalidOptLevel(_) => "E007",
             Self::InvalidSanitizer(_) => "E008",
             Self::ProfileNotFound(_) => "E009",
-            Self::InvalidTargetTriple(_) => "E010",
+            Self::InvalidTargetTriple(..) => "E010",
             Self::ManifestNotFound(_) => "E011",
             Self::ManifestReadError(_) => "E012",
             Self::ManifestParseError(_) => "E013",
@@ -60,6 +64,10 @@ impl Diagnostic for ErrorCode {
             Self::GitInvalidUrl(..) => "E017",
             Self::GitInvalidCommit(..) => "E018",
             Self::GitInvalidFetchDepth(_) => "E019",
+            Self::FileError(..) => "E020",
+            Self::SanitizersInRelease(_) => "E021",
+            Self::LtoWithSanitizers(_) => "E022",
+            Self::ConflictingSanitizers(_) => "E023",
         }
     }
 
@@ -81,7 +89,9 @@ impl Diagnostic for ErrorCode {
             Self::InvalidOptLevel(o) => format!("'{}' is not a valid optimization level", o),
             Self::InvalidSanitizer(s) => format!("'{}' is not a valid sanitizer", s),
             Self::ProfileNotFound(p) => format!("profile '{}' not found in veld.toml", p),
-            Self::InvalidTargetTriple(t) => format!("'{}' is not a recognized target triple", t),
+            Self::InvalidTargetTriple(p, t) => {
+                format!("'{}' is not a recognized target triple in profile {}", t, p)
+            }
             Self::ManifestNotFound(p) => format!("no veld.toml found at '{}'", p.display()),
             Self::ManifestReadError(e) => format!("could not read veld.toml: {}", e),
             Self::ManifestParseError(e) => format!("could not parse veld.toml: {}", e),
@@ -107,6 +117,17 @@ impl Diagnostic for ErrorCode {
             ),
 
             Self::GitInvalidFetchDepth(pkg) => format!("'fetch_depth' for '{}' must be >= 1", pkg),
+            Self::FileError(file, error) => format!("'Error with file {}: {}", file, error),
+            Self::SanitizersInRelease(p) => format!(
+                "profile '{}' cannot have sanitizers enabled in release mode",
+                p
+            ),
+            Self::LtoWithSanitizers(p) => {
+                format!("profile '{}' cannot have LTO enabled with sanitizers", p)
+            }
+            Self::ConflictingSanitizers(p) => {
+                format!("profile '{}' has conflicting sanitizers enabled", p)
+            }
         }
     }
 
@@ -126,7 +147,7 @@ impl Diagnostic for ErrorCode {
             }
             Self::InvalidBuildType(_) => Some("valid values: debug, release".into()),
             Self::InvalidOptLevel(_) => Some("valid values: O0, O1, O2, O3, Os, Oz".into()),
-            Self::InvalidTargetTriple(_) => {
+            Self::InvalidTargetTriple(..) => {
                 Some("example: aarch64-linux-gnu, x86_64-linux-musl".into())
             }
             Self::ManifestNotFound(_) => Some("run 'veld init' to create a new project".into()),
@@ -141,6 +162,20 @@ impl Diagnostic for ErrorCode {
             }
             Self::GitInvalidCommit(..) => {
                 Some("use the full 40-character SHA-1 hash (e.g. a1b2c3d4...ef)".into())
+            }
+            Self::FileError(file, ..) => Some(format!("Check if file {} exists", file)),
+            Self::SanitizersInRelease(profile) => format!(
+                "profile '{}' enables sanitizers with build = \"release\"",
+                profile
+            )
+            .into(),
+
+            Self::LtoWithSanitizers(_) => {
+                Some("disable lto or remove sanitizers — they cannot be used together".into())
+            }
+
+            Self::ConflictingSanitizers(_) => {
+                Some("'thread' sanitizer cannot be combined with 'address' or 'memory'".into())
             }
             _ => None,
         }

@@ -75,3 +75,105 @@ impl fmt::Display for VeldError {
         Ok(())
     }
 }
+
+// ─────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────
+pub fn display_errors(errors: &[VeldError]) {
+    if errors.is_empty() {
+        return;
+    }
+
+    println!(
+        "\n{}",
+        "╭───────────────────────────────────────────╮".red()
+    );
+    println!(
+        "{}",
+        "│           VELD ERROR DASHBOARD            │".red().bold()
+    );
+
+    let error_text = format!("Total errors found: {}", errors.len());
+    let padding = " ".repeat(41_usize.saturating_sub(error_text.len()));
+
+    println!(
+        "{} {}{} {}",
+        "│".red(),
+        error_text.cyan().bold(),
+        padding,
+        "│".red()
+    );
+    println!(
+        "{}\n",
+        "╰───────────────────────────────────────────╯".red()
+    );
+
+    for (i, error) in errors.iter().enumerate() {
+        println!("{}", error);
+        if i < errors.len() - 1 {
+            println!("{}", "·".repeat(45).dimmed());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_error_formatting_basic() {
+        let err = VeldError::new(
+            ErrorCode::InvalidBuildType("super-mega-fast".to_string()),
+            ErrorContext::new(),
+        );
+
+        let formatted = format!("{}", err);
+        assert!(formatted.contains("error[E006]"));
+        assert!(formatted.contains("super-mega-fast"));
+        assert!(formatted.contains("is not a valid build type"));
+        assert!(formatted.contains("hint:"));
+    }
+
+    #[test]
+    fn test_error_formatting_with_context() {
+        let ctx = ErrorContext::new()
+            .with_file(PathBuf::from("veld.toml"))
+            .with_location(10, 5)
+            .with_source_line("    build = \"super-mega-fast\"")
+            .with_value("super-mega-fast");
+
+        let err = VeldError::new(
+            ErrorCode::InvalidBuildType("super-mega-fast".to_string()),
+            ctx,
+        );
+
+        let formatted = format!("{}", err);
+        // Check for error code and message
+        assert!(formatted.contains("error[E006]"));
+        // Check for location string
+        assert!(formatted.contains("-->"));
+        assert!(formatted.contains("veld.toml:10:5"));
+        // Check for source line and carets
+        assert!(formatted.contains("build = \"super-mega-fast\""));
+        assert!(formatted.contains("^^^^^^^^^^^^^^^"));
+    }
+
+    #[test]
+    fn test_display_errors() {
+        // Just verify it doesn't panic on empty
+        display_errors(&[]);
+
+        // Verify it doesn't panic on a populated list
+        let err1 = VeldError::new(
+            ErrorCode::InvalidBuildType("magic".to_string()),
+            ErrorContext::new(),
+        );
+        let err2 = VeldError::new(
+            ErrorCode::MissingField("name".to_string()),
+            ErrorContext::new().with_file(PathBuf::from("veld.toml")),
+        );
+
+        display_errors(&[err1, err2]);
+    }
+}
