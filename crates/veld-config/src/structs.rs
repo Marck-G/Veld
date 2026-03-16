@@ -7,9 +7,9 @@ pub struct Manifest {
     pub package: PackageMetadata,
     pub profiles: BTreeMap<String, ProfileConfig>,
     #[serde(default)]
-    pub dependencies: BTreeMap<String, VersionReq>,
+    pub dependencies: BTreeMap<String, DependencySpec>,
     #[serde(default)]
-    pub dev_dependencies: BTreeMap<String, VersionReq>,
+    pub dev_dependencies: BTreeMap<String, DependencySpec>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -73,8 +73,48 @@ pub enum OptimizationLevel {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum Sanitizer {
-    Addres,
+    Address,
     Undefined,
     Thread,
     Memory,
 }
+
+// ---------------- Git-based Dependency Support ----------------
+//
+// Extend dependencies to support both registry-based and git-based sources.
+//
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitSource {
+    pub repo: String, // Git repository URL
+    pub branch: Option<String>,
+    pub tag: Option<String>,
+    pub commit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subdir: Option<String>, // Optional path inside the repo
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fetch_depth: Option<u32>, // Optional shallow fetch depth
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DependencySource {
+    #[serde(rename = "version")]
+    Registry { version: VersionReq },
+    #[serde(rename = "git")]
+    Git(GitSource),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DependencySpec {
+    pub source: DependencySource,
+    #[serde(default)]
+    pub optional: bool,
+    #[serde(default)]
+    pub features: Vec<String>,
+}
+
+// Note:
+// - The Manifest dependencies map now stores DependencySpec values.
+// - Existing volk: crate users can specify registry dependencies as `name = ">=1.2, <2.0"`
+//   or explicitly as `name = { version = ">=1.2, <2.0" }`, depending on your TOML/JSON parsing conventions.
