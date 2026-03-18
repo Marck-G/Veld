@@ -1,8 +1,10 @@
 mod error_context;
 mod errorcodes;
+mod macros;
 
 pub use error_context::*;
 pub use errorcodes::*;
+pub use macros::*;
 use owo_colors::OwoColorize;
 use std::fmt;
 

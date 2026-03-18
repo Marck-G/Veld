@@ -38,6 +38,13 @@ pub enum ErrorCode {
     SanitizersInRelease(String),      // profile_name
     LtoWithSanitizers(String),        // profile_name
     ConflictingSanitizers(String),    // profile_name
+    // Git operations (runtime)
+    GitCloneFailed(String, String),    // (url, message)
+    GitRefNotFound(String, String),    // (ref_name, url)
+    GitCheckoutFailed(String, String), // (commit, message)
+    GitFetchFailed(String, String),    // (remote, message)
+    GitOpenFailed(String, String),     // (path, message)
+    GitPeelingFailed(String, String),  // (ref_name, message)
 }
 
 impl Diagnostic for ErrorCode {
@@ -68,6 +75,12 @@ impl Diagnostic for ErrorCode {
             Self::SanitizersInRelease(_) => "E021",
             Self::LtoWithSanitizers(_) => "E022",
             Self::ConflictingSanitizers(_) => "E023",
+            Self::GitCloneFailed(..) => "E0200",
+            Self::GitRefNotFound(..) => "E0201",
+            Self::GitCheckoutFailed(..) => "E0202",
+            Self::GitFetchFailed(..) => "E0203",
+            Self::GitOpenFailed(..) => "E0204",
+            Self::GitPeelingFailed(..) => "E0205",
         }
     }
 
@@ -89,6 +102,20 @@ impl Diagnostic for ErrorCode {
             Self::InvalidOptLevel(o) => format!("'{}' is not a valid optimization level", o),
             Self::InvalidSanitizer(s) => format!("'{}' is not a valid sanitizer", s),
             Self::ProfileNotFound(p) => format!("profile '{}' not found in veld.toml", p),
+            Self::GitCloneFailed(url, msg) => format!("failed to clone '{url}': {msg}"),
+            Self::GitRefNotFound(r, url) => format!("reference '{r}' not found in '{url}'"),
+            Self::GitCheckoutFailed(commit, msg) => {
+                format!("failed to checkout commit '{commit}': {msg}")
+            }
+            Self::GitFetchFailed(remote, msg) => {
+                format!("failed to fetch from remote '{remote}': {msg}")
+            }
+            Self::GitOpenFailed(path, msg) => {
+                format!("failed to open repository at '{path}': {msg}")
+            }
+            Self::GitPeelingFailed(r, msg) => {
+                format!("failed to peel reference '{r}' to commit: {msg}")
+            }
             Self::InvalidTargetTriple(p, t) => {
                 format!("'{}' is not a recognized target triple in profile {}", t, p)
             }
@@ -177,6 +204,16 @@ impl Diagnostic for ErrorCode {
             Self::ConflictingSanitizers(_) => {
                 Some("'thread' sanitizer cannot be combined with 'address' or 'memory'".into())
             }
+            Self::GitCloneFailed(url, _) =>
+                Some(format!("check that '{url}' is reachable and that you have read access")),
+            Self::GitRefNotFound(r, _) =>
+                Some(format!("run `git ls-remote <url>` to list available tags and branches; '{r}' was not found")),
+            Self::GitCheckoutFailed(..) =>
+                Some("the local store may be corrupted; try removing the cached directory and re-running".into()),
+            Self::GitFetchFailed(remote, _) =>
+                Some(format!("check network connectivity and credentials for remote '{remote}'")),
+            Self::GitPeelingFailed(..) =>
+                Some("the tag may point to a non-commit object; verify the tag in the upstream repository".into()),
             _ => None,
         }
     }
