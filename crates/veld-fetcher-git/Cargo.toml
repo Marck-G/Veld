@@ -1,0 +1,9 @@
+[package]
+name = "veld-fetcher-git"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+veld-error = { workspace = true }
+reqwest = { workspace = true }
+git2 = { workspace = true }
