@@ -45,6 +45,12 @@ pub enum ErrorCode {
     GitFetchFailed(String, String),    // (remote, message)
     GitOpenFailed(String, String),     // (path, message)
     GitPeelingFailed(String, String),  // (ref_name, message)
+    // Lockfile
+    LockfileNotFound(PathBuf),
+    LockfileReadError(String),
+    LockfileParseError(String),
+    LockfileCheckFailed(String, String),
+    LockfileCorrupted(String),
 }
 
 impl Diagnostic for ErrorCode {
@@ -75,12 +81,17 @@ impl Diagnostic for ErrorCode {
             Self::SanitizersInRelease(_) => "E021",
             Self::LtoWithSanitizers(_) => "E022",
             Self::ConflictingSanitizers(_) => "E023",
-            Self::GitCloneFailed(..) => "E0200",
-            Self::GitRefNotFound(..) => "E0201",
-            Self::GitCheckoutFailed(..) => "E0202",
-            Self::GitFetchFailed(..) => "E0203",
-            Self::GitOpenFailed(..) => "E0204",
-            Self::GitPeelingFailed(..) => "E0205",
+            Self::GitCloneFailed(..) => "E0024",
+            Self::GitRefNotFound(..) => "E0025",
+            Self::GitCheckoutFailed(..) => "E0026",
+            Self::GitFetchFailed(..) => "E0027",
+            Self::GitOpenFailed(..) => "E0028",
+            Self::GitPeelingFailed(..) => "E0029",
+            Self::LockfileCorrupted(..) => "E0030",
+            Self::LockfileCheckFailed(..) => "E0031",
+            Self::LockfileParseError(..) => "E0032",
+            Self::LockfileReadError(..) => "E0033",
+            Self::LockfileNotFound(..) => "E0034",
         }
     }
 
@@ -155,6 +166,13 @@ impl Diagnostic for ErrorCode {
             Self::ConflictingSanitizers(p) => {
                 format!("profile '{}' has conflicting sanitizers enabled", p)
             }
+            Self::LockfileCorrupted(msg) => format!("lockfile is corrupted: {msg}"),
+            Self::LockfileCheckFailed(path, msg) => {
+                format!("failed to check lockfile at '{path}': {msg}")
+            }
+            Self::LockfileParseError(msg) => format!("failed to parse lockfile: {msg}"),
+            Self::LockfileReadError(msg) => format!("failed to read lockfile: {msg}"),
+            Self::LockfileNotFound(path) => format!("lockfile not found at '{}'", path.display()),
         }
     }
 
@@ -214,6 +232,13 @@ impl Diagnostic for ErrorCode {
                 Some(format!("check network connectivity and credentials for remote '{remote}'")),
             Self::GitPeelingFailed(..) =>
                 Some("the tag may point to a non-commit object; verify the tag in the upstream repository".into()),
+						Self::LockfileCorrupted(msg) => Some(format!("lockfile is corrupted: {msg}")),
+						Self::LockfileCheckFailed(path, msg) => {
+								format!("failed to check lockfile at '{}': {msg}", path).into()
+						}
+						Self::LockfileParseError(msg) => format!("failed to parse lockfile: {msg}").into(),
+						Self::LockfileReadError(msg) => format!("failed to read lockfile: {msg}").into(),
+						Self::LockfileNotFound(path) => format!("lockfile not found at '{}'", path.display()).into(),
             _ => None,
         }
     }
