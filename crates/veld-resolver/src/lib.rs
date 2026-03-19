@@ -1,14 +1,14 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Veld Resolver: Dependency resolution and source cache management.
+//!
+//! This crate provides:
+//! - Filesystem utilities for the local source cache (`filesystem`)
+//! - Cache manager for dependency locations and search (`cache`)
+//! - Dependency resolution via PubGrub (`provider`) — future
+//! - DAG construction and topological sort (`graph`) — future
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod cache;
+pub mod filesystem;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+// Future modules (to be implemented):
+// pub mod provider;
+// pub mod graph;
