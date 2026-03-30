@@ -20,7 +20,10 @@ use veld_config::{
     OptimizationLevel, PackageMetadata, PathSource, ProfileConfig,
 };
 use veld_error::VeldError;
-use veld_generator::{generate_build_helper, generate_cmake, CMakeConfig, CMakeDependency};
+use veld_generator::{
+    generate_build_helper, generate_cmake, generate_cmakelists, CMakeConfig, CMakeDependency,
+    CMakeProjectConfig,
+};
 use veld_lock::{LockedPackage, Lockfile};
 use veld_resolver::{DependencyGraph, DependencyResolver};
 
@@ -384,7 +387,7 @@ fn build_lockfile(
 /// Generate CMake files from the resolved dependency graph.
 fn generate_cmake_from_graph(
     project_dir: &Path,
-    _manifest: &Manifest,
+    manifest: &Manifest,
     lock: &Lockfile,
 ) -> Result<(), VeldError> {
     let cmake_deps: Vec<CMakeDependency> = lock
@@ -412,22 +415,57 @@ fn generate_cmake_from_graph(
         })
         .collect();
 
+    // Read C++ standard from the manifest profile instead of hardcoding
+    let cxx_standard = manifest
+        .profiles
+        .values()
+        .next()
+        .map(|p| cxx_standard_to_string(&p.cxx_std))
+        .unwrap_or_else(|| "17".to_string());
+
     let config = CMakeConfig {
-        cxx_standard: "17".to_string(),
+        cxx_standard: cxx_standard.clone(),
         build_type: "Debug".to_string(),
     };
 
     let cmake_path = generate_cmake(project_dir, &cmake_deps, &config)?;
     let helper_path = generate_build_helper(project_dir, &cmake_deps)?;
 
+    // Generate CMakeLists.txt (skips if already exists)
+    let project_config = CMakeProjectConfig {
+        project_name: manifest.package.name.clone(),
+        project_version: manifest.package.version.to_string(),
+        description: manifest.package.description.clone(),
+        cxx_standard,
+        languages: "C CXX".to_string(),
+    };
+    let cmakelists_path = generate_cmakelists(project_dir, &project_config, &cmake_deps)?;
+
     println!(
-        "{} Generated {} and {}",
+        "{} Generated {}, {}, and {}",
         "✓".green().bold(),
         cmake_path.file_name().unwrap().to_string_lossy().green(),
         helper_path.file_name().unwrap().to_string_lossy().green(),
+        cmakelists_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .green(),
     );
 
     Ok(())
+}
+
+/// Map a `CxxStandard` enum variant to its CMake-compatible string.
+fn cxx_standard_to_string(std: &veld_config::CxxStandard) -> String {
+    match std {
+        veld_config::CxxStandard::C99 => "99".to_string(),
+        veld_config::CxxStandard::C11 => "11".to_string(),
+        veld_config::CxxStandard::Cxx11 => "11".to_string(),
+        veld_config::CxxStandard::Cxx14 => "14".to_string(),
+        veld_config::CxxStandard::Cxx17 => "17".to_string(),
+        veld_config::CxxStandard::Cxx20 => "20".to_string(),
+    }
 }
 
 // ─────────────────────────────────────────────
