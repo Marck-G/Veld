@@ -101,7 +101,7 @@ impl Diagnostic for ErrorCode {
             Self::LockfileParseError(..) => "E0032",
             Self::LockfileReadError(..) => "E0033",
             Self::LockfileNotFound(..) => "E0034",
-            Self::BuildError(..) => "E0035",
+            Self::BuildError(..) => "E0036",
         }
     }
 

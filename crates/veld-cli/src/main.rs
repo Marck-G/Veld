@@ -56,6 +56,10 @@ enum Commands {
         /// Force re-resolution even if lockfile is valid
         #[arg(long)]
         force: bool,
+
+        /// Profile name to use (default: first profile in veld.toml)
+        #[arg(long)]
+        profile: Option<String>,
     },
 
     /// Add a dependency to veld.toml (git or local path)
@@ -90,10 +94,6 @@ enum Commands {
 
     /// Generate CMake files for the project, configure, and build
     Build {
-        /// C++ standard (e.g., 11, 14, 17, 20)
-        #[arg(long, default_value = "17")]
-        std: String,
-
         /// Build in release mode (with optimizations, no debug symbols)
         #[arg(long)]
         release: bool,
@@ -109,10 +109,34 @@ enum Commands {
         /// Number of parallel jobs for cmake --build (e.g., -j 8)
         #[arg(short, long)]
         jobs: Option<usize>,
+
+        /// Profile name to use (default: first profile in veld.toml)
+        #[arg(long)]
+        profile: Option<String>,
     },
 
     /// Show the dependency tree
     Tree,
+
+    /// Remove a dependency from veld.toml
+    Remove {
+        /// Dependency name to remove
+        name: String,
+
+        /// Remove from dev dependencies instead
+        #[arg(long)]
+        dev: bool,
+    },
+
+    /// Cache management commands
+    #[command(subcommand)]
+    Cache(CacheCommands),
+}
+
+#[derive(Subcommand)]
+enum CacheCommands {
+    /// Remove all cached dependency sources
+    Clean,
 }
 
 fn main() {
@@ -120,7 +144,7 @@ fn main() {
 
     let result = match cli.command {
         Commands::Init { name, version } => cmd_init(name, version),
-        Commands::Install { force } => cmd_install(force),
+        Commands::Install { force, profile } => cmd_install(force, profile),
         Commands::Add {
             name,
             git,
@@ -131,13 +155,15 @@ fn main() {
             dev,
         } => cmd_add(name, git, path, branch, tag, commit, dev),
         Commands::Build {
-            std,
             release,
             run,
             build_dir,
             jobs,
-        } => cmd_build(std, release, run, build_dir, jobs),
+            profile,
+        } => cmd_build(release, run, build_dir, jobs, profile),
         Commands::Tree => cmd_tree(),
+        Commands::Remove { name, dev } => cmd_remove(name, dev),
+        Commands::Cache(CacheCommands::Clean) => cmd_cache_clean(),
     };
 
     if let Err(e) = result {
@@ -247,7 +273,7 @@ fn cmd_init(name: Option<String>, version_str: String) -> Result<(), VeldError> 
 // INSTALL
 // ─────────────────────────────────────────────
 
-fn cmd_install(force: bool) -> Result<(), VeldError> {
+fn cmd_install(force: bool, profile_name: Option<String>) -> Result<(), VeldError> {
     let cwd = std::env::current_dir().map_err(|e| {
         VeldError::new(
             veld_error::ErrorCode::FileError(
@@ -260,6 +286,17 @@ fn cmd_install(force: bool) -> Result<(), VeldError> {
 
     // Load manifest
     let manifest = load_manifest(&cwd)?;
+
+    // Validate profile selection
+    if let Some(ref name) = profile_name {
+        if !manifest.profiles.contains_key(name) {
+            return Err(VeldError::new(
+                veld_error::ErrorCode::ProfileNotFound(name.clone()),
+                veld_error::ErrorContext::new(),
+            ));
+        }
+    }
+
     println!(
         "{} Resolving dependencies for {} v{}",
         "→".cyan().bold(),
@@ -616,11 +653,11 @@ fn cmd_add(
 // ─────────────────────────────────────────────
 
 fn cmd_build(
-    _cxx_std: String,
     release: bool,
     run: bool,
     build_dir: String,
     jobs: Option<usize>,
+    _profile_name: Option<String>,
 ) -> Result<(), VeldError> {
     let cwd = std::env::current_dir().map_err(|e| {
         VeldError::new(
@@ -646,6 +683,18 @@ fn cmd_build(
     }
 
     let lock = Lockfile::read(&lock_path)?;
+
+    // Validate lockfile version
+    if let Err(e) = lock.validate_version() {
+        eprintln!(
+            "{} {} — {}",
+            "!".yellow().bold(),
+            FILE_LOCK_NAME.yellow(),
+            e
+        );
+        eprintln!("  Run {} to regenerate", "veld install --force".bold());
+        return Ok(());
+    }
 
     // Determine build type from --release flag
     let cmake_build_type = if release { "Release" } else { "Debug" };
@@ -871,4 +920,109 @@ fn print_transitive_deps(
 
         print_transitive_deps(dep_map, &child.name, &child_prefix);
     }
+}
+
+// ─────────────────────────────────────────────
+// REMOVE
+// ─────────────────────────────────────────────
+
+fn cmd_remove(name: String, dev: bool) -> Result<(), VeldError> {
+    let cwd = std::env::current_dir().map_err(|e| {
+        VeldError::new(
+            veld_error::ErrorCode::FileError(
+                ".".into(),
+                format!("Cannot determine current directory: {}", e),
+            ),
+            veld_error::ErrorContext::new(),
+        )
+    })?;
+
+    let mut manifest = load_manifest(&cwd)?;
+
+    let removed = if dev {
+        manifest.dev_dependencies.remove(&name).is_some()
+    } else {
+        manifest.dependencies.remove(&name).is_some()
+    };
+
+    if !removed {
+        eprintln!(
+            "{} dependency '{}' not found in {}{}",
+            "!".yellow().bold(),
+            name.yellow(),
+            FILE_BUILD_NAME,
+            if dev { " (dev)" } else { "" }
+        );
+        return Ok(());
+    }
+
+    // Write back the manifest
+    let content = toml::to_string_pretty(&manifest).map_err(|e| {
+        VeldError::new(
+            veld_error::ErrorCode::ManifestParseError(format!(
+                "Failed to serialize manifest: {}",
+                e
+            )),
+            veld_error::ErrorContext::new(),
+        )
+    })?;
+
+    let manifest_path = cwd.join(FILE_BUILD_NAME);
+    std::fs::write(&manifest_path, content).map_err(|e| {
+        VeldError::new(
+            veld_error::ErrorCode::FileError(
+                manifest_path.to_string_lossy().into_owned(),
+                format!("Failed to write manifest: {}", e),
+            ),
+            veld_error::ErrorContext::new().with_file(manifest_path),
+        )
+    })?;
+
+    println!(
+        "{} Removed {} dependency '{}'",
+        "✓".green().bold(),
+        if dev { "dev" } else { "runtime" },
+        name.green()
+    );
+    println!(
+        "  Run {} to update lockfile and CMake",
+        "veld install --force".bold()
+    );
+
+    Ok(())
+}
+
+// ─────────────────────────────────────────────
+// CACHE
+// ─────────────────────────────────────────────
+
+fn cmd_cache_clean() -> Result<(), VeldError> {
+    let cache = veld_resolver::cache::CacheManager::new();
+    let cache_dir = cache.base_dir();
+
+    if !cache_dir.exists() {
+        println!(
+            "{} Cache directory does not exist (nothing to clean)",
+            "✓".green().bold()
+        );
+        return Ok(());
+    }
+
+    std::fs::remove_dir_all(&cache_dir).map_err(|e| {
+        VeldError::new(
+            veld_error::ErrorCode::FileError(
+                cache_dir.to_string_lossy().into_owned(),
+                format!("Failed to clean cache: {}", e),
+            ),
+            veld_error::ErrorContext::new().with_file(cache_dir.to_path_buf()),
+        )
+    })?;
+
+    println!(
+        "{} Cleaned cache at {}",
+        "✓".green().bold(),
+        cache_dir.display()
+    );
+
+    Ok(())
 }

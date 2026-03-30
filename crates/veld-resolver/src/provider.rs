@@ -89,6 +89,11 @@ impl DependencyResolver {
             self.resolve_dependency(dep_name, dep_spec, &mut graph, "root")?;
         }
 
+        // Also resolve dev dependencies
+        for (dep_name, dep_spec) in &manifest.dev_dependencies {
+            self.resolve_dependency(dep_name, dep_spec, &mut graph, "root")?;
+        }
+
         Ok(ResolutionResult {
             graph,
             conflicts: std::mem::take(&mut self.conflicts),
