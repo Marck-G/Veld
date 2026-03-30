@@ -1,4 +1,4 @@
-use veld_error::{VeldError, VeldResult};
+use veld_error::VeldResult;
 
 /// Check if url exists
 pub fn repo_exists(url: String) -> VeldResult<bool> {

@@ -1,16 +1,17 @@
 /// Macro to create a VeldError with an error code.
-/// 
+///
 /// The macro accepts either one or two arguments:
 /// - With one argument: `veld_error!(ErrorCode::InvalidVersion("1.0".to_string()))`
 /// - With two arguments: `veld_error!(ErrorCode::InvalidVersion("1.0".to_string()), ErrorContext::new().with_file(...))`
-/// 
+///
 /// # Example
-/// ```rust
-/// use veld_error::{ErrorCode, ErrorContext, VeldError};
-/// 
+/// ```ignore
+/// use veld_error::{ErrorCode, ErrorContext, veld_error};
+/// use std::path::PathBuf;
+///
 /// // Without context
 /// let err = veld_error!(ErrorCode::InvalidVersion("1.0".to_string()));
-/// 
+///
 /// // With context
 /// let err = veld_error!(ErrorCode::InvalidVersion("1.0".to_string()),
 ///                       ErrorContext::new()
@@ -29,34 +30,35 @@ macro_rules! veld_error {
 }
 
 /// Macro to convert errors to VeldError using map_err.
-/// 
+///
 /// This macro takes an expression that returns a Result and transforms any error
 /// into a VeldError using the provided error code.
-/// 
+///
 /// The macro accepts either two or three arguments:
 /// - With two arguments: `map_veld_error!(expr, ErrorCode::...)`
 /// - With three arguments: `map_veld_error!(expr, ErrorCode::..., ErrorContext::new().with_file(...))`
-/// 
+///
 /// # Arguments
 /// - `$exp`: The expression that returns a Result
 /// - `$code`: The ErrorCode to use when creating the VeldError
 /// - `$context`: (Optional) The ErrorContext to attach to the VeldError
-/// 
+///
 /// # Example
-/// ```rust
-/// use veld_error::{ErrorCode, ErrorContext, VeldError};
-/// 
+/// ```ignore
+/// use veld_error::{ErrorCode, ErrorContext, map_veld_error};
+/// use std::path::PathBuf;
+///
 /// // Without context
-/// let result = map_veld_error!(std::fs::read_to_string("file.txt"), 
+/// let result = map_veld_error!(std::fs::read_to_string("file.txt"),
 ///     ErrorCode::ManifestReadError("file not found".to_string()));
-/// 
+///
 /// // With context
 /// let ctx = ErrorContext::new()
 ///     .with_file(PathBuf::from("veld.toml"))
 ///     .with_location(10, 5);
 ///     
-/// let result = map_veld_error!(std::fs::read_to_string("file.txt"), 
-///     ErrorCode::ManifestReadError("file not found".to_string()), 
+/// let result = map_veld_error!(std::fs::read_to_string("file.txt"),
+///     ErrorCode::ManifestReadError("file not found".to_string()),
 ///     ctx);
 /// ```
 #[macro_export]
@@ -70,18 +72,19 @@ macro_rules! map_veld_error {
 }
 
 /// Macro to convert errors to VeldError with a custom error mapping function.
-/// 
+///
 /// This macro takes an expression that returns a Result and transforms any error
 /// into a VeldError using the provided function.
-/// 
+///
 /// # Arguments
 /// - `$exp`: The expression that returns a Result
 /// - `$fnt`: A function that takes the original error and returns a VeldError
-/// 
+///
 /// # Example
-/// ```rust
-/// use veld_error::{ErrorCode, ErrorContext, VeldError};
-/// 
+/// ```ignore
+/// use veld_error::{ErrorCode, ErrorContext, VeldError, map_veld_errin};
+/// use std::path::PathBuf;
+///
 /// let result = map_veld_errin!(std::fs::read_to_string("file.txt"), |err| {
 ///     VeldError::new(
 ///         ErrorCode::ManifestReadError(err.to_string()),

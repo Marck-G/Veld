@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use veld_error::{VeldResult, veld_error, ErrorCode, ErrorContext};
+use veld_error::{veld_error, ErrorCode, ErrorContext, VeldResult};
 
-use crate::filesystem::{get_deps_base_dir, ensure_deps_dir};
+use crate::filesystem::get_deps_base_dir;
 
 /// Manages the local source cache for git dependencies.
 ///
@@ -242,7 +242,6 @@ impl Default for CacheManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
 
     #[test]
     fn test_new() {
@@ -299,10 +298,7 @@ mod tests {
 
         let commit = "09155eaa2f9270dc4ed1fa13e2b4b2613e6e4851";
         let path = manager.commit_path("zlib", commit).unwrap();
-        assert_eq!(
-            path,
-            temp_base.join("zl").join("Zlib").join(commit)
-        );
+        assert_eq!(path, temp_base.join("zl").join("Zlib").join(commit));
     }
 
     #[test]
@@ -327,7 +323,11 @@ mod tests {
         let path = manager.manifest_path("zlib", commit).unwrap();
         assert_eq!(
             path,
-            temp_base.join("zl").join("Zlib").join(commit).join("manifest.toml")
+            temp_base
+                .join("zl")
+                .join("Zlib")
+                .join(commit)
+                .join("manifest.toml")
         );
     }
 
@@ -364,7 +364,9 @@ mod tests {
         let commit_dir = dep_dir.join("09155eaa2f9270dc4ed1fa13e2b4b2613e6e4851");
         std::fs::create_dir_all(&commit_dir).unwrap();
 
-        assert!(manager.has_commit("zlib", "09155eaa2f9270dc4ed1fa13e2b4b2613e6e4851").unwrap());
+        assert!(manager
+            .has_commit("zlib", "09155eaa2f9270dc4ed1fa13e2b4b2613e6e4851")
+            .unwrap());
         assert!(!manager.has_commit("zlib", "deadbeef").unwrap());
     }
 

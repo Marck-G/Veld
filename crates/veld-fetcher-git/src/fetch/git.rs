@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use git2::{FetchOptions, Repository, build::CheckoutBuilder, string_array::StringArray};
-use veld_error::{ErrorCode, ErrorContext, VeldResult, map_veld_errin, map_veld_error, veld_error};
+use git2::{build::CheckoutBuilder, FetchOptions, Repository};
+use veld_error::{map_veld_errin, map_veld_error, veld_error, ErrorCode, ErrorContext, VeldResult};
 
 use crate::fetch::fetcher::{FetchedSource, GitFetcher, SourceRef};
 pub struct LibGit2Fetcher;
@@ -31,10 +31,9 @@ impl GitFetcher for LibGit2Fetcher {
 }
 fn open_or_clone(url: &str, dest: &Path) -> VeldResult<Repository> {
     if dest.join(".git").exists() {
-        let repo = map_veld_errin!(
-            Repository::open(dest),
-            |e: git2::Error| veld_error!(ErrorCode::GitOpenFailed(dest.display().to_string(), e.to_string()))
-        )?;
+        let repo = map_veld_errin!(Repository::open(dest), |e: git2::Error| veld_error!(
+            ErrorCode::GitOpenFailed(dest.display().to_string(), e.to_string())
+        ))?;
         fetch_all_remotes(&repo)?;
         Ok(repo)
     } else {
@@ -46,32 +45,30 @@ fn clone(url: &str, dest: &Path) -> VeldResult<Repository> {
     let mut builder = git2::build::RepoBuilder::new();
     builder.fetch_options(default_fetch_options());
 
-    map_veld_errin!(
-        builder.clone(url, dest),
-        |e: git2::Error| veld_error!(ErrorCode::GitCloneFailed(url.to_owned(), e.to_string()))
-    )
+    map_veld_errin!(builder.clone(url, dest), |e: git2::Error| veld_error!(
+        ErrorCode::GitCloneFailed(url.to_owned(), e.to_string())
+    ))
 }
 
 fn fetch_all_remotes(repo: &Repository) -> VeldResult<()> {
     for remote_name in repo.remotes().unwrap().iter().flatten() {
-        let mut remote = map_veld_errin!(
-            repo.find_remote(remote_name),
-            |e: git2::Error| veld_error!(ErrorCode::GitFetchFailed(remote_name.to_owned(), e.to_string()))
-        )?;
+        let mut remote =
+            map_veld_errin!(repo.find_remote(remote_name), |e: git2::Error| veld_error!(
+                ErrorCode::GitFetchFailed(remote_name.to_owned(), e.to_string())
+            ))?;
 
         map_veld_errin!(
             remote.fetch(&[] as &[&str], Some(&mut default_fetch_options()), None),
-            |e: git2::Error| veld_error!(ErrorCode::GitFetchFailed(remote_name.to_owned(), e.to_string()))
+            |e: git2::Error| veld_error!(ErrorCode::GitFetchFailed(
+                remote_name.to_owned(),
+                e.to_string()
+            ))
         )?;
     }
     Ok(())
 }
 
-fn resolve_ref(
-    repo: &Repository,
-    url: &str,
-    source_ref: &SourceRef,
-) -> VeldResult<git2::Oid> {
+fn resolve_ref(repo: &Repository, url: &str, source_ref: &SourceRef) -> VeldResult<git2::Oid> {
     match source_ref {
         SourceRef::Commit(hash) => {
             map_veld_errin!(
@@ -85,13 +82,11 @@ fn resolve_ref(
             )
         }
 
-        SourceRef::Tag(tag) => {
-            peel_ref_to_commit(repo, &format!("refs/tags/{tag}"), url, tag)
-        }
+        SourceRef::Tag(tag) => peel_ref_to_commit(repo, &format!("refs/tags/{tag}"), url, tag),
 
         SourceRef::Branch(branch) => {
             let remote_ref = format!("refs/remotes/origin/{branch}");
-            let local_ref  = format!("refs/heads/{branch}");
+            let local_ref = format!("refs/heads/{branch}");
 
             peel_ref_to_commit(repo, &remote_ref, url, branch)
                 .or_else(|_| peel_ref_to_commit(repo, &local_ref, url, branch))
@@ -123,15 +118,13 @@ fn peel_ref_to_commit(
 }
 
 fn checkout(repo: &Repository, oid: git2::Oid) -> VeldResult<()> {
-    let commit = map_veld_errin!(
-        repo.find_commit(oid),
-        |e: git2::Error| veld_error!(ErrorCode::GitCheckoutFailed(oid.to_string(), e.to_string()))
-    )?;
+    let commit = map_veld_errin!(repo.find_commit(oid), |e: git2::Error| veld_error!(
+        ErrorCode::GitCheckoutFailed(oid.to_string(), e.to_string())
+    ))?;
 
-    let tree = map_veld_errin!(
-        commit.tree(),
-        |e: git2::Error| veld_error!(ErrorCode::GitCheckoutFailed(oid.to_string(), e.to_string()))
-    )?;
+    let tree = map_veld_errin!(commit.tree(), |e: git2::Error| veld_error!(
+        ErrorCode::GitCheckoutFailed(oid.to_string(), e.to_string())
+    ))?;
 
     let mut opts = CheckoutBuilder::new();
     opts.force();
@@ -141,10 +134,9 @@ fn checkout(repo: &Repository, oid: git2::Oid) -> VeldResult<()> {
         |e: git2::Error| veld_error!(ErrorCode::GitCheckoutFailed(oid.to_string(), e.to_string()))
     )?;
 
-    map_veld_errin!(
-        repo.set_head_detached(oid),
-        |e: git2::Error| veld_error!(ErrorCode::GitCheckoutFailed(oid.to_string(), e.to_string()))
-    )
+    map_veld_errin!(repo.set_head_detached(oid), |e: git2::Error| veld_error!(
+        ErrorCode::GitCheckoutFailed(oid.to_string(), e.to_string())
+    ))
 }
 
 fn default_fetch_options() -> FetchOptions<'static> {

@@ -3,7 +3,7 @@ name = "veld-cli"
 version = "0.1.0"
 edition = "2024"
 authors = ["Marck D. Carrión marckcarrion@tuta.io"]
-description = "C/C++ package manger"
+description = "C/C++ package manager"
 license = "MIT"
 
 
@@ -12,3 +12,13 @@ name = "veld"
 path = "src/main.rs"
 
 [dependencies]
+clap = { workspace = true }
+veld-config = { workspace = true }
+veld-resolver = { workspace = true }
+veld-lock = { workspace = true }
+veld-generator = { workspace = true }
+veld-error = { workspace = true }
+semver = { workspace = true }
+toml = { workspace = true }
+owo-colors = { workspace = true }
+petgraph = { workspace = true }

@@ -51,11 +51,9 @@ fn test_veld_file_creation(ctx: TestContext) {
     let result = config::generate(ctx.conf_path.clone(), metadata.clone());
     dbg!(&result);
     assert!(result.is_ok());
-    assert!(
-        Path::new(ctx.conf_path.as_str())
-            .join(constants::FILE_BUILD_NAME)
-            .exists()
-    );
+    assert!(Path::new(ctx.conf_path.as_str())
+        .join(constants::FILE_BUILD_NAME)
+        .exists());
     let ctn =
         fs::read_to_string(Path::new(ctx.conf_path.as_str()).join(constants::FILE_BUILD_NAME))
             .unwrap();

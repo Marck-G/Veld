@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use veld_error::{ErrorCode, ErrorContext, VeldResult, veld_error};
+use veld_error::{veld_error, ErrorCode, ErrorContext, VeldResult};
 
 /// Base directory for the local source cache.
 ///

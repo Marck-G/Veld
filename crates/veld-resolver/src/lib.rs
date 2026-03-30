@@ -3,12 +3,13 @@
 //! This crate provides:
 //! - Filesystem utilities for the local source cache (`filesystem`)
 //! - Cache manager for dependency locations and search (`cache`)
-//! - Dependency resolution via PubGrub (`provider`) — future
-//! - DAG construction and topological sort (`graph`) — future
+//! - Dependency graph with DAG, topological sort, and cycle detection (`graph`)
+//! - Dependency resolution via recursive tree walking (`provider`)
 
 pub mod cache;
 pub mod filesystem;
+pub mod graph;
+pub mod provider;
 
-// Future modules (to be implemented):
-// pub mod provider;
-// pub mod graph;
+pub use graph::{DependencyGraph, ResolvedPackage};
+pub use provider::{DependencyConflict, DependencyResolver, ResolutionResult};

@@ -3,9 +3,9 @@ mod constants;
 use std::{fs, path::Path};
 
 use chrono::Utc;
-use petgraph::{Graph, visit::EdgeRef};
+use petgraph::Graph;
 use serde::{Deserialize, Serialize};
-use veld_error::{ErrorCode, VeldResult, map_veld_error, veld_error};
+use veld_error::{map_veld_error, veld_error, ErrorCode, VeldResult};
 
 use crate::constants::{FILE_LOCK_NAME, SELF_VERSION};
 
@@ -75,23 +75,25 @@ impl Lockfile {
     }
 
     /// Crear lockfile desde un DAG resuelto
+    ///
+    /// Edge direction: dependency → dependent (dependencies come first in toposort)
     pub fn from_resolved_graph(
         dag: &Graph<ResolvedPackage, ()>,
         profile_hash: String,
         manifest_hash: String,
     ) -> VeldResult<Self> {
-        use petgraph::visit::IntoNodeReferences;
+        use petgraph::visit::{EdgeRef, IntoNodeReferences};
 
         // Convertir nodos del DAG a LockedPackages
         let mut packages: Vec<LockedPackage> = dag
             .node_references()
             .map(|(idx, pkg)| {
-                // Encontrar qué paquetes requieren este
+                // Encontrar qué paquetes requieren este (outgoing edges point to dependents)
                 let required_by: Vec<String> = dag
-                    .edges_directed(idx, petgraph::Direction::Incoming)
+                    .edges_directed(idx, petgraph::Direction::Outgoing)
                     .map(|edge| {
-                        let parent = &dag[edge.source()];
-                        parent.name.clone()
+                        let dependent = &dag[edge.target()];
+                        dependent.name.clone()
                     })
                     .collect();
 
@@ -376,12 +378,10 @@ mod tests {
         // Reading should fail
         let result = Lockfile::read(temp_file.path());
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("checksum mismatch")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("checksum mismatch"));
     }
 
     #[rstest]
@@ -415,12 +415,10 @@ mod tests {
     fn test_lockfile_read_nonexistent_file() {
         let result = Lockfile::read("/nonexistent/path/veld.lock");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to read lockfile")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to read lockfile"));
     }
 
     #[rstest]
@@ -463,12 +461,10 @@ mod tests {
     fn test_validate_profile_hash_mismatch(sample_lockfile: Lockfile) {
         let result = sample_lockfile.validate_profile("different_profile_hash");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Build profile changed")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Build profile changed"));
     }
 
     #[rstest]
