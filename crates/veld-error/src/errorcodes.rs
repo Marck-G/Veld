@@ -56,6 +56,8 @@ pub enum ErrorCode {
     LockfileParseError(String),
     LockfileCheckFailed(String, String),
     LockfileCorrupted(String),
+    // Build
+    BuildError(String),
 }
 
 impl Diagnostic for ErrorCode {
@@ -99,6 +101,7 @@ impl Diagnostic for ErrorCode {
             Self::LockfileParseError(..) => "E0032",
             Self::LockfileReadError(..) => "E0033",
             Self::LockfileNotFound(..) => "E0034",
+            Self::BuildError(..) => "E0035",
         }
     }
 
@@ -185,6 +188,7 @@ impl Diagnostic for ErrorCode {
             Self::LockfileParseError(msg) => format!("failed to parse lockfile: {msg}"),
             Self::LockfileReadError(msg) => format!("failed to read lockfile: {msg}"),
             Self::LockfileNotFound(path) => format!("lockfile not found at '{}'", path.display()),
+            Self::BuildError(msg) => format!("build error: {msg}"),
         }
     }
 

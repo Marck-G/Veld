@@ -36,6 +36,14 @@ pub struct CMakeConfig {
     pub cxx_standard: String,
     /// Build type ("Debug" or "Release")
     pub build_type: String,
+    /// Optimization flag (e.g., "-O0", "-O2", "-O3")
+    pub optimization_flag: String,
+    /// Whether to enable position-independent code
+    pub pic: bool,
+    /// Whether to enable link-time optimization
+    pub lto: bool,
+    /// Sanitizer names to enable (e.g., "address", "undefined")
+    pub sanitizers: Vec<String>,
 }
 
 impl Default for CMakeConfig {
@@ -43,6 +51,10 @@ impl Default for CMakeConfig {
         Self {
             cxx_standard: "17".to_string(),
             build_type: "Debug".to_string(),
+            optimization_flag: "-O0".to_string(),
+            pic: true,
+            lto: false,
+            sanitizers: vec![],
         }
     }
 }
@@ -134,6 +146,92 @@ pub fn render_cmake(dependencies: &[CMakeDependency], config: &CMakeConfig) -> V
     writeln!(out, "set(CMAKE_CXX_STANDARD {})", config.cxx_standard).unwrap();
     writeln!(out, "set(CMAKE_CXX_STANDARD_REQUIRED ON)").unwrap();
     writeln!(out).unwrap();
+
+    // Build type
+    writeln!(out, "set(CMAKE_BUILD_TYPE \"{}\")", config.build_type).unwrap();
+    writeln!(out).unwrap();
+
+    // Compiler flags based on build type
+    writeln!(
+        out,
+        "# ── Build type: {} ──────────────────────────────────",
+        config.build_type
+    )
+    .unwrap();
+
+    let base_flags = format!("{}", config.optimization_flag);
+
+    // Debug-specific flags
+    if config.build_type == "Debug" {
+        writeln!(
+            out,
+            "set(CMAKE_C_FLAGS \"${{CMAKE_C_FLAGS}} -g -O0 -DDEBUG\")"
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "set(CMAKE_CXX_FLAGS \"${{CMAKE_CXX_FLAGS}} -g -O0 -DDEBUG\")"
+        )
+        .unwrap();
+    } else {
+        // Release-specific flags
+        writeln!(
+            out,
+            "set(CMAKE_C_FLAGS \"${{CMAKE_C_FLAGS}} {} -DNDEBUG\")",
+            base_flags
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "set(CMAKE_CXX_FLAGS \"${{CMAKE_CXX_FLAGS}} {} -DNDEBUG\")",
+            base_flags
+        )
+        .unwrap();
+    }
+    writeln!(out).unwrap();
+
+    // PIC (position-independent code)
+    if config.pic {
+        writeln!(out, "set(CMAKE_POSITION_INDEPENDENT_CODE ON)").unwrap();
+        writeln!(out).unwrap();
+    }
+
+    // LTO (link-time optimization)
+    if config.lto {
+        writeln!(out, "set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)").unwrap();
+        writeln!(out).unwrap();
+    }
+
+    // Sanitizers
+    if !config.sanitizers.is_empty() {
+        writeln!(out, "# ── Sanitizers ─────────────────────────────────────").unwrap();
+        let mut sanitizer_flags: Vec<String> = Vec::new();
+        for sanitizer in &config.sanitizers {
+            match sanitizer.as_str() {
+                "address" => sanitizer_flags.push("-fsanitize=address".to_string()),
+                "undefined" => sanitizer_flags.push("-fsanitize=undefined".to_string()),
+                "thread" => sanitizer_flags.push("-fsanitize=thread".to_string()),
+                "memory" => sanitizer_flags.push("-fsanitize=memory".to_string()),
+                _ => {}
+            }
+        }
+        if !sanitizer_flags.is_empty() {
+            let flags_str = sanitizer_flags.join(" ");
+            writeln!(out, "set(VELD_SANITIZER_FLAGS \"{}\")", flags_str).unwrap();
+            writeln!(
+                out,
+                "set(CMAKE_C_FLAGS \"${{CMAKE_C_FLAGS}} ${{VELD_SANITIZER_FLAGS}}\")"
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "set(CMAKE_CXX_FLAGS \"${{CMAKE_CXX_FLAGS}} ${{VELD_SANITIZER_FLAGS}}\")"
+            )
+            .unwrap();
+            writeln!(out, "set(CMAKE_EXE_LINKER_FLAGS \"${{CMAKE_EXE_LINKER_FLAGS}} ${{VELD_SANITIZER_FLAGS}}\")").unwrap();
+        }
+        writeln!(out).unwrap();
+    }
 
     if dependencies.is_empty() {
         writeln!(out, "# No dependencies").unwrap();
@@ -511,6 +609,10 @@ mod tests {
         let config = CMakeConfig {
             cxx_standard: "20".to_string(),
             build_type: "Release".to_string(),
+            optimization_flag: "-O2".to_string(),
+            pic: true,
+            lto: true,
+            sanitizers: vec![],
         };
         let content = render_cmake(&deps, &config).unwrap();
 

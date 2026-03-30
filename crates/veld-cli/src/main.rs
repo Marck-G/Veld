@@ -88,15 +88,27 @@ enum Commands {
         dev: bool,
     },
 
-    /// Generate CMake files for the project
+    /// Generate CMake files for the project, configure, and build
     Build {
         /// C++ standard (e.g., 11, 14, 17, 20)
         #[arg(long, default_value = "17")]
         std: String,
 
-        /// Build type (debug, release)
-        #[arg(long, default_value = "debug")]
-        build_type: String,
+        /// Build in release mode (with optimizations, no debug symbols)
+        #[arg(long)]
+        release: bool,
+
+        /// Actually run cmake configure + build (otherwise just generate files)
+        #[arg(long)]
+        run: bool,
+
+        /// Build directory name (default: "build")
+        #[arg(long, default_value = "build")]
+        build_dir: String,
+
+        /// Number of parallel jobs for cmake --build (e.g., -j 8)
+        #[arg(short, long)]
+        jobs: Option<usize>,
     },
 
     /// Show the dependency tree
@@ -118,7 +130,13 @@ fn main() {
             commit,
             dev,
         } => cmd_add(name, git, path, branch, tag, commit, dev),
-        Commands::Build { std, build_type } => cmd_build(std, build_type),
+        Commands::Build {
+            std,
+            release,
+            run,
+            build_dir,
+            jobs,
+        } => cmd_build(std, release, run, build_dir, jobs),
         Commands::Tree => cmd_tree(),
     };
 
@@ -416,16 +434,40 @@ fn generate_cmake_from_graph(
         .collect();
 
     // Read C++ standard from the manifest profile instead of hardcoding
-    let cxx_standard = manifest
-        .profiles
-        .values()
-        .next()
+    let profile = manifest.profiles.values().next();
+
+    let cxx_standard = profile
         .map(|p| cxx_standard_to_string(&p.cxx_std))
         .unwrap_or_else(|| "17".to_string());
 
+    let build_type = profile
+        .map(|p| p.build.as_cmake_type().to_string())
+        .unwrap_or_else(|| "Debug".to_string());
+
+    let optimization_flag = profile
+        .map(|p| p.optimization.as_flag().to_string())
+        .unwrap_or_else(|| "-O0".to_string());
+
+    let pic = profile.map(|p| p.pic).unwrap_or(true);
+
+    let lto = profile.map(|p| p.lto).unwrap_or(false);
+
+    let sanitizers: Vec<String> = profile
+        .map(|p| {
+            p.sanitizers
+                .iter()
+                .map(|s| format!("{:?}", s).to_lowercase())
+                .collect()
+        })
+        .unwrap_or_default();
+
     let config = CMakeConfig {
         cxx_standard: cxx_standard.clone(),
-        build_type: "Debug".to_string(),
+        build_type,
+        optimization_flag,
+        pic,
+        lto,
+        sanitizers,
     };
 
     let cmake_path = generate_cmake(project_dir, &cmake_deps, &config)?;
@@ -573,7 +615,13 @@ fn cmd_add(
 // BUILD
 // ─────────────────────────────────────────────
 
-fn cmd_build(_cxx_std: String, build_type: String) -> Result<(), VeldError> {
+fn cmd_build(
+    _cxx_std: String,
+    release: bool,
+    run: bool,
+    build_dir: String,
+    jobs: Option<usize>,
+) -> Result<(), VeldError> {
     let cwd = std::env::current_dir().map_err(|e| {
         VeldError::new(
             veld_error::ErrorCode::FileError(
@@ -599,14 +647,119 @@ fn cmd_build(_cxx_std: String, build_type: String) -> Result<(), VeldError> {
 
     let lock = Lockfile::read(&lock_path)?;
 
+    // Determine build type from --release flag
+    let cmake_build_type = if release { "Release" } else { "Debug" };
+
+    // Override the build type in the manifest profile based on CLI flag
+    let mut manifest = manifest;
+    if let Some(profile) = manifest.profiles.values_mut().next() {
+        profile.build = if release {
+            BuildType::Release
+        } else {
+            BuildType::Debug
+        };
+    }
+
     generate_cmake_from_graph(&cwd, &manifest, &lock)?;
 
-    println!(
-        "{} CMake files generated. To build your project:",
-        "✓".green().bold()
-    );
-    println!("  cmake -B build -DCMAKE_BUILD_TYPE={}", build_type);
-    println!("  cmake --build build");
+    if run {
+        println!(
+            "{} Configuring cmake (build type: {})...",
+            "→".cyan().bold(),
+            cmake_build_type
+        );
+
+        // cmake -B <build_dir> -DCMAKE_BUILD_TYPE=<type>
+        let cmake_configure = std::process::Command::new("cmake")
+            .args(["-B", &build_dir])
+            .arg(format!("-DCMAKE_BUILD_TYPE={}", cmake_build_type))
+            .current_dir(&cwd)
+            .status();
+
+        match cmake_configure {
+            Ok(status) if status.success() => {
+                println!("{} CMake configure succeeded", "✓".green().bold());
+            }
+            Ok(status) => {
+                return Err(VeldError::new(
+                    veld_error::ErrorCode::BuildError(format!(
+                        "CMake configure failed with exit code: {:?}",
+                        status.code()
+                    )),
+                    veld_error::ErrorContext::new(),
+                ));
+            }
+            Err(e) => {
+                return Err(VeldError::new(
+                    veld_error::ErrorCode::BuildError(format!(
+                        "Failed to run cmake: {}. Is cmake installed?",
+                        e
+                    )),
+                    veld_error::ErrorContext::new(),
+                ));
+            }
+        }
+
+        // cmake --build <build_dir> [-j <jobs>]
+        println!("{} Building project...", "→".cyan().bold());
+
+        let mut build_cmd = std::process::Command::new("cmake");
+        build_cmd.args(["--build", &build_dir]);
+        if let Some(j) = jobs {
+            build_cmd.args(["-j", &j.to_string()]);
+        }
+        build_cmd.current_dir(&cwd);
+
+        let cmake_build = build_cmd.status();
+        match cmake_build {
+            Ok(status) if status.success() => {
+                println!(
+                    "{} Build completed successfully (type: {})",
+                    "✓".green().bold(),
+                    cmake_build_type
+                );
+            }
+            Ok(status) => {
+                return Err(VeldError::new(
+                    veld_error::ErrorCode::BuildError(format!(
+                        "CMake build failed with exit code: {:?}",
+                        status.code()
+                    )),
+                    veld_error::ErrorContext::new(),
+                ));
+            }
+            Err(e) => {
+                return Err(VeldError::new(
+                    veld_error::ErrorCode::BuildError(format!(
+                        "Failed to run cmake --build: {}",
+                        e
+                    )),
+                    veld_error::ErrorContext::new(),
+                ));
+            }
+        }
+    } else {
+        println!(
+            "{} CMake files generated. To build your project:",
+            "✓".green().bold()
+        );
+        println!(
+            "  cmake -B {} -DCMAKE_BUILD_TYPE={}",
+            build_dir, cmake_build_type
+        );
+        println!("  cmake --build {}", build_dir);
+        println!();
+        if !release {
+            println!(
+                "  Use {} for an optimized release build",
+                "veld build --release".bold()
+            );
+        }
+        println!(
+            "  Use {} to configure and build automatically",
+            "veld build --run".bold()
+        );
+    }
 
     Ok(())
 }

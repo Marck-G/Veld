@@ -51,6 +51,22 @@ pub enum BuildType {
     Release,
 }
 
+impl BuildType {
+    /// Returns the CMake-compatible build type string (e.g., "Debug", "Release").
+    pub fn as_cmake_type(&self) -> &'static str {
+        match self {
+            BuildType::Debug => "Debug",
+            BuildType::Release => "Release",
+        }
+    }
+}
+
+impl std::fmt::Display for BuildType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_cmake_type())
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum CompilerFamily {
@@ -68,6 +84,26 @@ pub enum OptimizationLevel {
     O3,
     Os,
     Oz,
+}
+
+impl OptimizationLevel {
+    /// Returns the compiler flag string (e.g., "-O0", "-O2", "-Os").
+    pub fn as_flag(&self) -> &'static str {
+        match self {
+            OptimizationLevel::O0 => "-O0",
+            OptimizationLevel::O1 => "-O1",
+            OptimizationLevel::O2 => "-O2",
+            OptimizationLevel::O3 => "-O3",
+            OptimizationLevel::Os => "-Os",
+            OptimizationLevel::Oz => "-Oz",
+        }
+    }
+}
+
+impl std::fmt::Display for OptimizationLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_flag())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
