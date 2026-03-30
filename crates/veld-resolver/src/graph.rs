@@ -16,13 +16,13 @@ pub struct ResolvedPackage {
     pub name: String,
     /// Semantic version from the package manifest
     pub version: semver::Version,
-    /// Git repository URL
-    pub repository: String,
-    /// Resolved 40-char SHA-1 commit hash
-    pub commit: String,
+    /// Git repository URL (None for path dependencies)
+    pub repository: Option<String>,
+    /// Resolved 40-char SHA-1 commit hash (None for path dependencies)
+    pub commit: Option<String>,
     /// Artifact ID used in lockfile and CMake targets
     pub artifact_id: String,
-    /// Path to the source directory in the local cache
+    /// Path to the source directory in the local cache or local filesystem
     pub src_path: std::path::PathBuf,
 }
 
@@ -170,8 +170,8 @@ mod tests {
         ResolvedPackage {
             name: name.to_string(),
             version: semver::Version::parse(version).unwrap(),
-            repository: repo.to_string(),
-            commit: commit.to_string(),
+            repository: Some(repo.to_string()),
+            commit: Some(commit.to_string()),
             artifact_id: format!("{:0<34}", name),
             src_path: PathBuf::from(format!("/cache/{}/src", name)),
         }

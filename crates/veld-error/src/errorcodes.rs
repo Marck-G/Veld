@@ -34,10 +34,15 @@ pub enum ErrorCode {
     GitInvalidUrl(String, String),    // esquema no reconocido
     GitInvalidCommit(String, String), // hash no es 40 hex chars
     GitInvalidFetchDepth(String),     // fetch_depth = 0
-    FileError(String, String),        // Error file errors
-    SanitizersInRelease(String),      // profile_name
-    LtoWithSanitizers(String),        // profile_name
-    ConflictingSanitizers(String),    // profile_name
+
+    // Path sources
+    PathEmpty(String),            // path = ""
+    PathNotFound(String, String), // (pkg_name, path)
+
+    FileError(String, String),     // Error file errors
+    SanitizersInRelease(String),   // profile_name
+    LtoWithSanitizers(String),     // profile_name
+    ConflictingSanitizers(String), // profile_name
     // Git operations (runtime)
     GitCloneFailed(String, String),    // (url, message)
     GitRefNotFound(String, String),    // (ref_name, url)
@@ -77,6 +82,8 @@ impl Diagnostic for ErrorCode {
             Self::GitInvalidUrl(..) => "E017",
             Self::GitInvalidCommit(..) => "E018",
             Self::GitInvalidFetchDepth(_) => "E019",
+            Self::PathEmpty(_) => "E035",
+            Self::PathNotFound(..) => "E036",
             Self::FileError(..) => "E020",
             Self::SanitizersInRelease(_) => "E021",
             Self::LtoWithSanitizers(_) => "E022",
@@ -155,6 +162,11 @@ impl Diagnostic for ErrorCode {
             ),
 
             Self::GitInvalidFetchDepth(pkg) => format!("'fetch_depth' for '{}' must be >= 1", pkg),
+            Self::PathEmpty(pkg) => format!("path dependency '{}' has an empty path", pkg),
+            Self::PathNotFound(pkg, path) => format!(
+                "path dependency '{}' points to non-existent path '{}'",
+                pkg, path
+            ),
             Self::FileError(file, error) => format!("'Error with file {}: {}", file, error),
             Self::SanitizersInRelease(p) => format!(
                 "profile '{}' cannot have sanitizers enabled in release mode",
@@ -239,6 +251,12 @@ impl Diagnostic for ErrorCode {
 						Self::LockfileParseError(msg) => format!("failed to parse lockfile: {msg}").into(),
 						Self::LockfileReadError(msg) => format!("failed to read lockfile: {msg}").into(),
 						Self::LockfileNotFound(path) => format!("lockfile not found at '{}'", path.display()).into(),
+            Self::PathEmpty(_) => {
+                Some("example: mylib = { path = \"../mylib\" }".into())
+            }
+            Self::PathNotFound(_, path) => {
+                Some(format!("ensure the directory '{}' exists", path))
+            }
             _ => None,
         }
     }

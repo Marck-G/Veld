@@ -13,7 +13,9 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use semver::Version;
-use veld_config::{load_manifest, DependencySource, DependencySpec, GitSource, Manifest};
+use veld_config::{
+    load_manifest, DependencySource, DependencySpec, GitSource, Manifest, PathSource,
+};
 use veld_error::{ErrorCode, ErrorContext, VeldError, VeldResult};
 use veld_fetcher_git::{FetchedSource, GitFetcher, LibGit2Fetcher, SourceRef};
 
@@ -101,19 +103,26 @@ impl DependencyResolver {
         graph: &mut DependencyGraph,
         _required_by: &str,
     ) -> VeldResult<Option<NodeHandle>> {
-        // Only handle git dependencies for now
-        let git_source = match &dep_spec.source {
-            DependencySource::Git(git) => git,
+        match &dep_spec.source {
+            DependencySource::Git(git) => self.resolve_git_dependency(dep_name, git, graph),
+            DependencySource::Path(path) => self.resolve_path_dependency(dep_name, path, graph),
             DependencySource::Registry { .. } => {
-                // Registry dependencies are not yet supported in this MVP
                 eprintln!(
                     "warning: registry dependency '{}' is not yet supported, skipping",
                     dep_name
                 );
-                return Ok(None);
+                Ok(None)
             }
-        };
+        }
+    }
 
+    /// Resolve a git-based dependency.
+    fn resolve_git_dependency(
+        &mut self,
+        dep_name: &str,
+        git_source: &GitSource,
+        graph: &mut DependencyGraph,
+    ) -> VeldResult<Option<NodeHandle>> {
         // Determine the source ref
         let source_ref = self.git_source_to_ref(git_source)?;
 
@@ -164,6 +173,98 @@ impl DependencyResolver {
             &src_dir,
             Some(&dep_manifest),
         );
+        let parent_idx = graph.add_package(package);
+
+        // Copy the dependency's deps into a local vec to avoid borrow issues
+        let child_deps: Vec<(String, DependencySpec)> = dep_manifest
+            .dependencies
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        // Recursively resolve transitive dependencies
+        for (child_name, child_spec) in &child_deps {
+            if let Some(child_handle) =
+                self.resolve_dependency(child_name, child_spec, graph, dep_name)?
+            {
+                graph.add_dependency(parent_idx, child_handle.0);
+            }
+        }
+
+        Ok(Some(NodeHandle(parent_idx)))
+    }
+
+    /// Resolve a path-based (local) dependency.
+    fn resolve_path_dependency(
+        &mut self,
+        dep_name: &str,
+        path_source: &PathSource,
+        graph: &mut DependencyGraph,
+    ) -> VeldResult<Option<NodeHandle>> {
+        // Check if already visited
+        if self.visited.contains(dep_name) {
+            return Ok(graph.find_index(dep_name).map(NodeHandle));
+        }
+        self.visited.insert(dep_name.to_string());
+
+        // Resolve the path to an absolute path
+        let dep_path = std::path::Path::new(&path_source.path);
+        let abs_path = if dep_path.is_absolute() {
+            dep_path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map_err(|e| {
+                    VeldError::new(
+                        ErrorCode::FileError(
+                            ".".into(),
+                            format!("Cannot determine current directory: {}", e),
+                        ),
+                        ErrorContext::new(),
+                    )
+                })?
+                .join(dep_path)
+        };
+
+        // Canonicalize the path
+        let canonical_path = abs_path.canonicalize().map_err(|e| {
+            VeldError::new(
+                ErrorCode::FileError(
+                    abs_path.to_string_lossy().into_owned(),
+                    format!("Failed to resolve path dependency '{}': {}", dep_name, e),
+                ),
+                ErrorContext::new().with_file(abs_path.clone()),
+            )
+        })?;
+
+        // Try to load the dependency's manifest from the path
+        let dep_manifest = match load_manifest(&canonical_path) {
+            Ok(m) => m,
+            Err(_) => {
+                // No veld.toml found -- treat as leaf dependency
+                let package = ResolvedPackage {
+                    name: dep_name.to_string(),
+                    version: semver::Version::new(0, 0, 0),
+                    repository: None,
+                    commit: None,
+                    artifact_id: format!("{:0<34}", dep_name),
+                    src_path: canonical_path.clone(),
+                };
+                let idx = graph.add_package(package);
+                return Ok(Some(NodeHandle(idx)));
+            }
+        };
+
+        let version = dep_manifest.package.version.clone();
+
+        // Create the resolved package
+        let package = ResolvedPackage {
+            name: dep_name.to_string(),
+            version,
+            repository: None,
+            commit: None,
+            artifact_id: format!("{:0<34}", dep_name),
+            src_path: canonical_path.clone(),
+        };
         let parent_idx = graph.add_package(package);
 
         // Copy the dependency's deps into a local vec to avoid borrow issues
@@ -260,8 +361,8 @@ impl DependencyResolver {
         ResolvedPackage {
             name: dep_name.to_string(),
             version,
-            repository: git_source.repo.clone(),
-            commit: fetched.commit.clone(),
+            repository: Some(git_source.repo.clone()),
+            commit: Some(fetched.commit.clone()),
             artifact_id: format!("{:0<34}", dep_name),
             src_path: src_dir.to_path_buf(),
         }

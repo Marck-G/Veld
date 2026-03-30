@@ -4,7 +4,7 @@ use crate::{
     constants::FILE_BUILD_NAME,
     structs::{
         BuildType, DependencySource, DependencySpec, GitSource, Manifest, PackageMetadata,
-        ProfileConfig, Sanitizer,
+        PathSource, ProfileConfig, Sanitizer,
     },
 };
 impl GitSource {
@@ -72,6 +72,28 @@ impl GitSource {
     }
 }
 
+impl PathSource {
+    pub fn validate(&self, pkg_name: &str, ctx: &ErrorContext) -> Result<(), Vec<VeldError>> {
+        if self.path.trim().is_empty() {
+            return Err(vec![VeldError::new(
+                ErrorCode::PathEmpty(pkg_name.to_string()),
+                ctx.clone(),
+            )]);
+        }
+
+        // Check if the path exists
+        let path = std::path::Path::new(&self.path);
+        if !path.exists() {
+            return Err(vec![VeldError::new(
+                ErrorCode::PathNotFound(pkg_name.to_string(), self.path.clone()),
+                ctx.clone(),
+            )]);
+        }
+
+        Ok(())
+    }
+}
+
 impl PackageMetadata {
     pub fn validate(&self, ctx: &ErrorContext) -> Result<(), Vec<VeldError>> {
         if self.name.is_empty() {
@@ -130,10 +152,11 @@ impl ProfileConfig {
 
 impl DependencySource {
     pub fn validate(&self, pkg: String, ctx: &ErrorContext) -> Result<(), Vec<VeldError>> {
-        if let Self::Git(e) = self {
-            return e.validate(pkg.as_str(), ctx);
+        match self {
+            Self::Git(git) => git.validate(pkg.as_str(), ctx),
+            Self::Path(path) => path.validate(pkg.as_str(), ctx),
+            Self::Registry { .. } => Ok(()),
         }
-        Ok(())
     }
 }
 

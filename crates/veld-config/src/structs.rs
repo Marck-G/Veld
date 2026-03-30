@@ -79,9 +79,9 @@ pub enum Sanitizer {
     Memory,
 }
 
-// ---------------- Git-based Dependency Support ----------------
+// ---------------- Dependency Source Support ----------------
 //
-// Extend dependencies to support both registry-based and git-based sources.
+// Extend dependencies to support registry-based, git-based, and path-based sources.
 //
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,12 +97,19 @@ pub struct GitSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathSource {
+    pub path: String, // Local filesystem path to the dependency
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum DependencySource {
     #[serde(rename = "version")]
     Registry { version: VersionReq },
     #[serde(rename = "git")]
     Git(GitSource),
+    #[serde(rename = "path")]
+    Path(PathSource),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,3 +125,4 @@ pub struct DependencySpec {
 // - The Manifest dependencies map now stores DependencySpec values.
 // - Existing volk: crate users can specify registry dependencies as `name = ">=1.2, <2.0"`
 //   or explicitly as `name = { version = ">=1.2, <2.0" }`, depending on your TOML/JSON parsing conventions.
+// - Path dependencies can be specified as: `mylib = { path = "../mylib" }`

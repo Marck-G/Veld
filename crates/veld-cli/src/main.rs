@@ -3,7 +3,8 @@
 //! Commands:
 //! - `veld init` — Create a new veld.toml manifest
 //! - `veld install` — Resolve dependencies, fetch sources, generate lockfile + CMake
-//! - `veld add <dep> --git <url> --tag|--branch|--commit <ref>` — Add a dependency
+//! - `veld add <dep> --git <url> --tag|--branch|--commit <ref>` — Add a git dependency
+//! - `veld add <dep> --path <path>` — Add a local path dependency
 //! - `veld build` — Generate CMake files and optionally run cmake
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -16,7 +17,7 @@ use semver::Version;
 use veld_config::{
     constants::FILE_BUILD_NAME, constants::FILE_LOCK_NAME, hash_manifest, hash_profile,
     load_manifest, BuildType, CxxStandard, DependencySource, DependencySpec, GitSource, Manifest,
-    OptimizationLevel, PackageMetadata, ProfileConfig,
+    OptimizationLevel, PackageMetadata, PathSource, ProfileConfig,
 };
 use veld_error::VeldError;
 use veld_generator::{generate_build_helper, generate_cmake, CMakeConfig, CMakeDependency};
@@ -27,7 +28,7 @@ use veld_resolver::{DependencyGraph, DependencyResolver};
 #[command(
     name = "veld",
     version,
-    about = "A C/C++ package manager with git dependencies"
+    about = "A C/C++ package manager with git and path dependencies"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -54,14 +55,18 @@ enum Commands {
         force: bool,
     },
 
-    /// Add a git dependency to veld.toml
+    /// Add a dependency to veld.toml (git or local path)
     Add {
         /// Dependency name
         name: String,
 
         /// Git repository URL
-        #[arg(long)]
-        git: String,
+        #[arg(long, conflicts_with = "path")]
+        git: Option<String>,
+
+        /// Local filesystem path to the dependency
+        #[arg(long, conflicts_with = "git")]
+        path: Option<String>,
 
         /// Git branch to use
         #[arg(long, conflicts_with_all = ["tag", "commit"])]
@@ -104,11 +109,12 @@ fn main() {
         Commands::Add {
             name,
             git,
+            path,
             branch,
             tag,
             commit,
             dev,
-        } => cmd_add(name, git, branch, tag, commit, dev),
+        } => cmd_add(name, git, path, branch, tag, commit, dev),
         Commands::Build { std, build_type } => cmd_build(std, build_type),
         Commands::Tree => cmd_tree(),
     };
@@ -346,6 +352,13 @@ fn build_lockfile(
                 })
                 .collect();
 
+            // Determine if this is a path dependency (no repository/commit)
+            let path_dep = if pkg.repository.is_none() {
+                Some(pkg.src_path.to_string_lossy().into_owned())
+            } else {
+                None
+            };
+
             LockedPackage {
                 name: pkg.name.clone(),
                 version: pkg.version.clone(),
@@ -358,6 +371,7 @@ fn build_lockfile(
                     required_by
                 },
                 content_hash: None,
+                path: path_dep,
             }
         })
         .collect();
@@ -377,11 +391,17 @@ fn generate_cmake_from_graph(
         .packages
         .iter()
         .map(|pkg| {
-            // Build the cache path for the dependency's source
-            let cache_manager = veld_resolver::cache::CacheManager::new();
-            let src_path = cache_manager
-                .src_dir(&pkg.name, &pkg.commit)
-                .unwrap_or_else(|_| PathBuf::from(format!("/veld/cache/{}/src", pkg.name)));
+            // Determine the source path:
+            // - For path dependencies, use the path directly from the lockfile
+            // - For git dependencies, compute from the cache
+            let src_path = if let Some(ref dep_path) = pkg.path {
+                PathBuf::from(dep_path)
+            } else {
+                let cache_manager = veld_resolver::cache::CacheManager::new();
+                cache_manager
+                    .src_dir(&pkg.name, pkg.commit.as_deref().unwrap_or_default())
+                    .unwrap_or_else(|_| PathBuf::from(format!("/veld/cache/{}/src", pkg.name)))
+            };
 
             CMakeDependency {
                 name: pkg.name.clone(),
@@ -416,7 +436,8 @@ fn generate_cmake_from_graph(
 
 fn cmd_add(
     name: String,
-    git: String,
+    git: Option<String>,
+    path: Option<String>,
     branch: Option<String>,
     tag: Option<String>,
     commit: Option<String>,
@@ -434,19 +455,39 @@ fn cmd_add(
 
     let mut manifest = load_manifest(&cwd)?;
 
-    let git_source = GitSource {
-        repo: git.clone(),
-        branch,
-        tag,
-        commit,
-        subdir: None,
-        fetch_depth: None,
-    };
-
-    let dep_spec = DependencySpec {
-        source: DependencySource::Git(git_source),
-        optional: false,
-        features: vec![],
+    let (dep_spec, source_desc) = if let Some(git_url) = git {
+        let git_source = GitSource {
+            repo: git_url.clone(),
+            branch,
+            tag,
+            commit,
+            subdir: None,
+            fetch_depth: None,
+        };
+        (
+            DependencySpec {
+                source: DependencySource::Git(git_source),
+                optional: false,
+                features: vec![],
+            },
+            git_url,
+        )
+    } else if let Some(dep_path) = path {
+        (
+            DependencySpec {
+                source: DependencySource::Path(PathSource {
+                    path: dep_path.clone(),
+                }),
+                optional: false,
+                features: vec![],
+            },
+            dep_path,
+        )
+    } else {
+        return Err(VeldError::new(
+            veld_error::ErrorCode::MissingField("git or path".into()),
+            veld_error::ErrorContext::new(),
+        ));
     };
 
     if dev {
@@ -482,7 +523,7 @@ fn cmd_add(
         "✓".green().bold(),
         if dev { "dev" } else { "runtime" },
         name.green(),
-        git.cyan()
+        source_desc.cyan()
     );
 
     println!("  Run {} to fetch and resolve", "veld install".bold());
@@ -579,13 +620,19 @@ fn cmd_tree() -> Result<(), VeldError> {
         let prefix = if is_last { "└── " } else { "├── " };
         let child_prefix = if is_last { "    " } else { "│   " };
 
-        let short_commit = &dep.commit[..8];
+        let ref_label = dep
+            .commit
+            .as_ref()
+            .map(|c| c[..8.min(c.len())].to_string())
+            .or_else(|| dep.path.as_ref().map(|p| format!("path: {}", p)))
+            .unwrap_or_else(|| "local".to_string());
+
         println!(
             "{}{} v{} [{}]",
             prefix,
             dep.name.green(),
             dep.version,
-            short_commit.to_string().dimmed()
+            ref_label.dimmed()
         );
 
         // Show transitive dependencies
@@ -615,14 +662,20 @@ fn print_transitive_deps(
         let connector = if is_last { "└── " } else { "├── " };
         let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
 
-        let short_commit = &child.commit[..8];
+        let ref_label = child
+            .commit
+            .as_ref()
+            .map(|c| c[..8.min(c.len())].to_string())
+            .or_else(|| child.path.as_ref().map(|p| format!("path: {}", p)))
+            .unwrap_or_else(|| "local".to_string());
+
         println!(
             "{}{}{} v{} [{}]",
             prefix,
             connector,
             child.name.green(),
             child.version,
-            short_commit.to_string().dimmed()
+            ref_label.dimmed()
         );
 
         print_transitive_deps(dep_map, &child.name, &child_prefix);

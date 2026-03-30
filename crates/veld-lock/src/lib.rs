@@ -23,13 +23,17 @@ pub struct LockMetadata {
 pub struct LockedPackage {
     pub name: String,
     pub version: semver::Version,
-    pub repository: String,
-    pub commit: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
     pub artifact_id: String,
     pub required_by: Vec<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -100,8 +104,8 @@ impl Lockfile {
                 LockedPackage {
                     name: pkg.name.clone(),
                     version: pkg.version.clone(),
-                    repository: pkg.repository.clone(),
-                    commit: pkg.commit.clone(),
+                    repository: Some(pkg.repository.clone()),
+                    commit: Some(pkg.commit.clone()),
                     artifact_id: pkg.artifact_id.clone(),
                     required_by: if required_by.is_empty() {
                         vec!["root".to_string()]
@@ -109,6 +113,7 @@ impl Lockfile {
                         required_by
                     },
                     content_hash: None, // Computed later if needed
+                    path: None,
                 }
             })
             .collect();
@@ -272,11 +277,12 @@ mod tests {
         LockedPackage {
             name: "zlib".to_string(),
             version: semver::Version::new(1, 3, 1),
-            repository: "https://github.com/madler/zlib".to_string(),
-            commit: "0".repeat(40),
+            repository: Some("https://github.com/madler/zlib".to_string()),
+            commit: Some("0".repeat(40)),
             artifact_id: format!("{:0<34}", "zlib"),
             required_by: vec!["root".to_string()],
             content_hash: None,
+            path: None,
         }
     }
 
@@ -294,11 +300,12 @@ mod tests {
         LockedPackage {
             name: name.to_string(),
             version: version,
-            repository: format!("https://github.com/test/{}", name),
-            commit: "0".repeat(40),
+            repository: Some(format!("https://github.com/test/{}", name)),
+            commit: Some("0".repeat(40)),
             artifact_id: format!("{:0<34}", name),
             required_by: required_by.iter().map(|s| s.to_string()).collect(),
             content_hash: None,
+            path: None,
         }
     }
 
